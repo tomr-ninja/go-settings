@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/goccy/go-yaml"
 )
@@ -91,6 +92,8 @@ func (p *Parser) Parse(v any, fs ...FieldParseOption) (bool, error) {
 			*v = opts.defaultValue.(float64)
 		case *bool:
 			*v = opts.defaultValue.(bool)
+		case *time.Duration:
+			*v = opts.defaultValue.(time.Duration)
 		default:
 			return false, ErrUnsupportedType
 		}
@@ -222,6 +225,13 @@ func (*Parser) parseString(v any, vStr string) error {
 		}
 
 		*v = vBool
+	case *time.Duration:
+		vDuration, err := time.ParseDuration(vStr)
+		if err != nil {
+			return err
+		}
+
+		*v = vDuration
 	default:
 		return ErrUnsupportedType
 	}

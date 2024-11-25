@@ -1,68 +1,72 @@
 package settings_test
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/tomr-ninja/go-settings"
 )
 
-func TestDefaultParser(t *testing.T) {
-	t.Run("parse string", func(t *testing.T) {
-		setup := func(t *testing.T) {
-			t.Helper()
+func testParserType[T comparable](t *testing.T, expected T, builder func(setting *settings.Setting)) {
+	var v T
 
-			t.Setenv("OPTION1", "test")
-			settings.DefaultParser.SetYAML("option1: test")
-			settings.DefaultParser.SetArgs([]string{"--option1=test"})
+	builder(settings.Add(&v))
+	settings.MustParse()
+
+	if v != expected {
+		t.Errorf("expected %v, got %v", expected, v)
+	}
+}
+
+func TestDefaultParser(t *testing.T) {
+	setup := func(t *testing.T, val string) {
+		t.Helper()
+
+		t.Setenv("OPTION1", val)
+		settings.DefaultParser.SetYAML(fmt.Sprintf("option1: %s", val))
+		settings.DefaultParser.SetArgs([]string{fmt.Sprintf("--option1=%s", val)})
+	}
+
+	t.Run("parse", func(t *testing.T) {
+		type testRun struct {
+			name    string
+			builder func(setting *settings.Setting)
 		}
 
-		t.Run("yaml only", func(t *testing.T) {
-			setup(t)
+		runs := []testRun{
+			{name: "yaml only", builder: func(setting *settings.Setting) { setting.YAML("option1") }},
+			{name: "env only", builder: func(setting *settings.Setting) { setting.Env("OPTION1") }},
+			{name: "flag only", builder: func(setting *settings.Setting) { setting.Flag("option1") }},
+			{name: "all combined", builder: func(setting *settings.Setting) { setting.YAML("option1").Env("OPTION1").Flag("option1") }},
+		}
 
-			v := ""
-			settings.Add(&v).YAML("option1")
-			settings.MustParse()
+		for _, run := range runs {
+			t.Run("string", func(t *testing.T) {
+				setup(t, "test")
+				testParserType(t, "test", run.builder)
+			})
 
-			if v != "test" {
-				t.Errorf("expected %s, got %s", "test", v)
-			}
-		})
+			t.Run("int", func(t *testing.T) {
+				setup(t, "42")
+				testParserType(t, 42, run.builder)
+			})
 
-		t.Run("env only", func(t *testing.T) {
-			setup(t)
+			t.Run("bool", func(t *testing.T) {
+				setup(t, "true")
+				testParserType(t, true, run.builder)
+			})
 
-			v := ""
-			settings.Add(&v).Env("OPTION1")
-			settings.MustParse()
+			t.Run("float", func(t *testing.T) {
+				setup(t, "3.14")
+				testParserType(t, 3.14, run.builder)
+			})
 
-			if v != "test" {
-				t.Errorf("expected %s, got %s", "test", v)
-			}
-		})
-
-		t.Run("flag only", func(t *testing.T) {
-			setup(t)
-
-			v := ""
-			settings.Add(&v).Flag("option1")
-			settings.MustParse()
-
-			if v != "test" {
-				t.Errorf("expected %s, got %s", "test", v)
-			}
-		})
-
-		t.Run("all combined", func(t *testing.T) {
-			setup(t)
-
-			v := ""
-			settings.Add(&v).YAML("option1").Env("OPTION1").Flag("option1")
-			settings.MustParse()
-
-			if v != "test" {
-				t.Errorf("expected %s, got %s", "test", v)
-			}
-		})
+			t.Run("time.Duration", func(t *testing.T) {
+				setup(t, "1h")
+				testParserType(t, time.Hour, run.builder)
+			})
+		}
 	})
 
 	t.Run("required", func(t *testing.T) {

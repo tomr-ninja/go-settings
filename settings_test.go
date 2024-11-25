@@ -1,13 +1,12 @@
 package settings_test
 
 import (
-	"os"
 	"testing"
 
 	"github.com/tomr-ninja/go-settings"
 )
 
-func TestParser(t *testing.T) {
+func TestDefaultParser(t *testing.T) {
 	t.Run("parse string", func(t *testing.T) {
 		setup := func(t *testing.T) {
 			t.Helper()
@@ -93,8 +92,8 @@ func TestParser(t *testing.T) {
 			Option2 int
 		}{}
 
-		_ = os.Setenv("OPTION1", "test")
-		_ = os.Setenv("OPTION2", "42")
+		t.Setenv("OPTION1", "test")
+		t.Setenv("OPTION2", "42")
 
 		settings.DefaultParser.SetYAML("option1: test\noption2: 42")
 
@@ -110,4 +109,19 @@ func TestParser(t *testing.T) {
 			t.Errorf("expected %d, got %d", 42, cfg.Option2)
 		}
 	})
+}
+
+func TestCustomParser(t *testing.T) {
+	t.Setenv("OPTION1", "test")
+
+	v := ""
+	parser := settings.NewParser()
+	parser.Add(&v).Env("OPTION1")
+
+	if err := parser.Parse(); err != nil {
+		t.Error(err)
+	}
+	if v != "test" {
+		t.Errorf("expected %s, got %s", "test", v)
+	}
 }

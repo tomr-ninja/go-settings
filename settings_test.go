@@ -7,15 +7,22 @@ import (
 	"github.com/tomr-ninja/go-settings"
 )
 
-func TestMustParse(t *testing.T) {
+func TestParser(t *testing.T) {
 	t.Run("parse string", func(t *testing.T) {
-		_ = os.Setenv("OPTION1", "test")
-		settings.DefaultParser.SetYAML("option1: test")
-		settings.DefaultParser.SetArgs([]string{"--option1=test"})
+		setup := func(t *testing.T) {
+			t.Helper()
+
+			t.Setenv("OPTION1", "test")
+			settings.DefaultParser.SetYAML("option1: test")
+			settings.DefaultParser.SetArgs([]string{"--option1=test"})
+		}
 
 		t.Run("yaml only", func(t *testing.T) {
+			setup(t)
+
 			v := ""
-			settings.MustParse(&v, settings.YAML("option1"))
+			settings.Add(&v).YAML("option1")
+			settings.MustParse()
 
 			if v != "test" {
 				t.Errorf("expected %s, got %s", "test", v)
@@ -23,8 +30,11 @@ func TestMustParse(t *testing.T) {
 		})
 
 		t.Run("env only", func(t *testing.T) {
+			setup(t)
+
 			v := ""
-			settings.MustParse(&v, settings.Env("OPTION1"))
+			settings.Add(&v).Env("OPTION1")
+			settings.MustParse()
 
 			if v != "test" {
 				t.Errorf("expected %s, got %s", "test", v)
@@ -32,8 +42,11 @@ func TestMustParse(t *testing.T) {
 		})
 
 		t.Run("flag only", func(t *testing.T) {
+			setup(t)
+
 			v := ""
-			settings.MustParse(&v, settings.Flag("option1"))
+			settings.Add(&v).Flag("option1")
+			settings.MustParse()
 
 			if v != "test" {
 				t.Errorf("expected %s, got %s", "test", v)
@@ -41,8 +54,11 @@ func TestMustParse(t *testing.T) {
 		})
 
 		t.Run("all combined", func(t *testing.T) {
+			setup(t)
+
 			v := ""
-			settings.MustParse(&v, settings.YAML("option1"), settings.Env("OPTION1"), settings.Flag("option1"))
+			settings.Add(&v).YAML("option1").Env("OPTION1").Flag("option1")
+			settings.MustParse()
 
 			if v != "test" {
 				t.Errorf("expected %s, got %s", "test", v)
@@ -52,15 +68,19 @@ func TestMustParse(t *testing.T) {
 
 	t.Run("required", func(t *testing.T) {
 		v := ""
-		_, err := settings.Parse(&v, settings.Env("MISSING_OPTION"), settings.Required(true))
-		if err == nil {
+
+		settings.Add(&v).Env("MISSING_OPTION").Required(true)
+
+		if err := settings.Parse(); err == nil {
 			t.Error("expected error")
 		}
 	})
 
 	t.Run("default value", func(t *testing.T) {
 		v := 0
-		settings.MustParse(&v, settings.Env("MISSING_OPTION"), settings.Default(42))
+
+		settings.Add(&v).Env("MISSING_OPTION").Default(42)
+		settings.MustParse()
 
 		if v != 42 {
 			t.Errorf("expected %d, got %d", 42, v)
@@ -78,8 +98,10 @@ func TestMustParse(t *testing.T) {
 
 		settings.DefaultParser.SetYAML("option1: test\noption2: 42")
 
-		settings.MustParse(&cfg.Option1, settings.YAML("option1"))
-		settings.MustParse(&cfg.Option2, settings.Env("OPTION2"))
+		settings.Add(&cfg.Option1).YAML("option1")
+		settings.Add(&cfg.Option2).Env("OPTION2")
+
+		settings.MustParse()
 
 		if cfg.Option1 != "test" {
 			t.Errorf("expected %s, got %s", "test", cfg.Option1)

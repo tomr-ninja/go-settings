@@ -29,6 +29,8 @@ type Parser struct {
 	yaml      string
 	envPrefix string
 	args      []string
+
+	settings []*Setting
 }
 
 type Option func(p *Parser)
@@ -42,6 +44,12 @@ func NewParser(opts ...Option) *Parser {
 	return p
 }
 
+func WithYAML(yaml string) Option {
+	return func(p *Parser) {
+		p.yaml = yaml
+	}
+}
+
 func WithEnvPrefix(prefix string) Option {
 	return func(p *Parser) {
 		p.envPrefix = prefix
@@ -52,56 +60,6 @@ func WithArgs(args []string) Option {
 	return func(p *Parser) {
 		p.args = args
 	}
-}
-
-func (p *Parser) MustParse(v any, fs ...FieldParseOption) bool {
-	parsed, err := p.Parse(v, fs...)
-	if err != nil {
-		panic(err)
-	}
-
-	return parsed
-}
-
-func (p *Parser) Parse(v any, fs ...FieldParseOption) (bool, error) {
-	if v == nil {
-		return false, ErrNilPointer
-	}
-
-	opts := new(fieldParseOptions)
-	for _, f := range fs {
-		f(opts)
-	}
-
-	parsed, err := p.parse(v, opts)
-	if err != nil {
-		return false, err
-	}
-
-	if !parsed && opts.required {
-		return false, ErrRequiredFieldNotFound
-	}
-
-	if !parsed && opts.defaultValue != nil {
-		switch v := v.(type) {
-		case *string:
-			*v = opts.defaultValue.(string)
-		case *int:
-			*v = opts.defaultValue.(int)
-		case *float64:
-			*v = opts.defaultValue.(float64)
-		case *bool:
-			*v = opts.defaultValue.(bool)
-		case *time.Duration:
-			*v = opts.defaultValue.(time.Duration)
-		default:
-			return false, ErrUnsupportedType
-		}
-
-		return true, nil
-	}
-
-	return parsed, nil
 }
 
 func (p *Parser) SetYAML(yaml string) {
@@ -127,23 +85,92 @@ func (p *Parser) SetArgs(args []string) {
 	p.args = args
 }
 
-func (p *Parser) parse(v any, opts *fieldParseOptions) (parsed bool, err error) {
-	if opts.yamlPath != "" {
-		parsed, err = p.parseYAML(v, opts.yamlPath)
+func (p *Parser) Add(v any) *Setting {
+	s := new(Setting)
+	s.v = v
+	p.settings = append(p.settings, s)
+
+	return s
+}
+
+func (p *Parser) Reset() {
+	p.yaml = ""
+	p.envPrefix = ""
+	p.args = nil
+	p.settings = nil
+}
+
+func (p *Parser) Parse() error {
+	for _, s := range p.settings {
+		if err := p.set(s); err != nil {
+			p.Reset()
+
+			return err
+		}
+	}
+
+	p.Reset()
+
+	return nil
+}
+
+func (p *Parser) MustParse() {
+	if err := p.Parse(); err != nil {
+		panic(err)
+	}
+}
+
+func (p *Parser) set(s *Setting) error {
+	if s.v == nil {
+		return ErrNilPointer
+	}
+
+	parsed, err := p.parse(s)
+	if err != nil {
+		return err
+	}
+
+	if !parsed && s.required {
+		return ErrRequiredFieldNotFound
+	}
+
+	if !parsed && s.defaultValue != nil {
+		switch v := s.v.(type) {
+		case *string:
+			*v = s.defaultValue.(string)
+		case *int:
+			*v = s.defaultValue.(int)
+		case *float64:
+			*v = s.defaultValue.(float64)
+		case *bool:
+			*v = s.defaultValue.(bool)
+		case *time.Duration:
+			*v = s.defaultValue.(time.Duration)
+		default:
+			return ErrUnsupportedType
+		}
+	}
+
+	return nil
+}
+
+func (p *Parser) parse(s *Setting) (parsed bool, err error) {
+	if s.yamlPath != "" {
+		parsed, err = p.parseYAML(s.v, s.yamlPath)
 		if err != nil {
 			return false, err
 		}
 	}
 
-	if opts.envVar != "" {
-		parsed, err = p.parseEnv(v, opts.envVar)
+	if s.envVar != "" {
+		parsed, err = p.parseEnv(s.v, s.envVar)
 		if err != nil {
 			return false, err
 		}
 	}
 
-	if opts.flag != "" {
-		parsed, err = p.parseFlag(v, opts.flag)
+	if s.flag != "" {
+		parsed, err = p.parseFlag(s.v, s.flag)
 		if err != nil {
 			return false, err
 		}
@@ -239,15 +266,21 @@ func (*Parser) parseString(v any, vStr string) error {
 	return nil
 }
 
-func Parse(v any, fs ...FieldParseOption) (bool, error) {
-	return DefaultParser.Parse(v, fs...)
+func Add(v any) *Setting {
+	return DefaultParser.Add(v)
 }
 
-func MustParse(v any, fs ...FieldParseOption) {
-	DefaultParser.MustParse(v, fs...)
+func Parse() error {
+	return DefaultParser.Parse()
 }
 
-type fieldParseOptions struct {
+func MustParse() {
+	DefaultParser.MustParse()
+}
+
+type Setting struct {
+	v any
+
 	envVar   string
 	yamlPath string
 	flag     string
@@ -256,38 +289,38 @@ type fieldParseOptions struct {
 	required     bool
 }
 
-type FieldParseOption func(v *fieldParseOptions)
+type FieldParseOption func(v *Setting)
 
-func Env(envVar string) FieldParseOption {
-	return func(v *fieldParseOptions) {
-		v.envVar = envVar
-	}
+func (s *Setting) Env(envVar string) *Setting {
+	s.envVar = envVar
+
+	return s
 }
 
-func YAML(yamlPath string) FieldParseOption {
-	return func(v *fieldParseOptions) {
-		if yamlPath[0] != '$' {
-			yamlPath = "$." + yamlPath
-		}
-
-		v.yamlPath = yamlPath
+func (s *Setting) YAML(yamlPath string) *Setting {
+	if yamlPath[0] != '$' {
+		yamlPath = "$." + yamlPath
 	}
+
+	s.yamlPath = yamlPath
+
+	return s
 }
 
-func Flag(flag string) FieldParseOption {
-	return func(v *fieldParseOptions) {
-		v.flag = flag
-	}
+func (s *Setting) Flag(flag string) *Setting {
+	s.flag = flag
+
+	return s
 }
 
-func Required(isRequired bool) FieldParseOption {
-	return func(v *fieldParseOptions) {
-		v.required = isRequired
-	}
+func (s *Setting) Required(isRequired bool) *Setting {
+	s.required = isRequired
+
+	return s
 }
 
-func Default(v any) FieldParseOption {
-	return func(opts *fieldParseOptions) {
-		opts.defaultValue = v
-	}
+func (s *Setting) Default(v any) *Setting {
+	s.defaultValue = v
+
+	return s
 }

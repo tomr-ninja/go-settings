@@ -16,3 +16,43 @@ If you don't share my unhappiness with the declarative style of managing setting
 a field of a struct declared in another Go module (which means, no more intermediate structures!), anything would work.
 - Mark required settings.
 - Set default values.
+
+## Examples
+
+### Direct usage on a struct from another module
+
+```go
+import (
+	"github.com/redis/go-redis/v9"
+	"github.com/tomr-ninja/go-settings"
+)
+
+func setupRedis() *redis.Client {
+	redisOptions := new(redis.Options)
+	redisConfig := settings.NewParser(settings.WithEnvPrefix("REDIS"))
+	redisConfig.Add(&redisOptions.Addr).Env("ADDR").Default("localhost:6379")
+	redisConfig.MustParse()	
+
+	return redis.NewClient(redisOptions)
+}
+```
+
+### Multiple settings sources
+
+```go
+import "github.com/tomr-ninja/go-settings"
+
+func main() {
+    var config struct {
+        Addr string
+        Port int
+    }
+
+	// priority decreases from the left to the right
+	settings.Add(&config.Addr).Flag("addr").Env("ADDR").Default("localhost")
+	settings.Add(&config.Port).Env("PORT").Flag("port").Default(8080)
+	settings.MustParse()
+
+    fmt.Printf("Addr: %s, Port: %d\n", config.Addr, config.Port)
+}
+```

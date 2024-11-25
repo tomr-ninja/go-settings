@@ -80,52 +80,79 @@ func TestDefaultParser(t *testing.T) {
 	})
 
 	t.Run("default value", func(t *testing.T) {
-		v := 0
+		testParserType(t, "test", func(setting *settings.Setting) { setting.Env("MISSING_OPTION").Default("test") })
+		testParserType(t, 42, func(setting *settings.Setting) { setting.Env("MISSING_OPTION").Default(42) })
+		testParserType(t, true, func(setting *settings.Setting) { setting.Env("MISSING_OPTION").Default(true) })
+		testParserType(t, 3.14, func(setting *settings.Setting) { setting.Env("MISSING_OPTION").Default(3.14) })
+		testParserType(t, time.Hour, func(setting *settings.Setting) { setting.Env("MISSING_OPTION").Default(time.Hour) })
 
-		settings.Add(&v).Env("MISSING_OPTION").Default(42)
-		settings.MustParse()
-
-		if v != 42 {
-			t.Errorf("expected %d, got %d", 42, v)
-		}
+		t.Run("default only", func(t *testing.T) {
+			testParserType(t, "test", func(setting *settings.Setting) { setting.Default("test") })
+			testParserType(t, 42, func(setting *settings.Setting) { setting.Default(42) })
+			testParserType(t, true, func(setting *settings.Setting) { setting.Default(true) })
+			testParserType(t, 3.14, func(setting *settings.Setting) { setting.Default(3.14) })
+			testParserType(t, time.Hour, func(setting *settings.Setting) { setting.Default(time.Hour) })
+		})
 	})
 
 	t.Run("big config", func(t *testing.T) {
 		cfg := struct {
 			Option1 string
 			Option2 int
+			Option3 bool
+			Option4 float64
+			Option5 time.Duration
 		}{}
 
-		t.Setenv("OPTION1", "test")
+		t.Setenv("OPTION1", "test1")
 		t.Setenv("OPTION2", "42")
+		t.Setenv("OPTION3", "false")
+		t.Setenv("OPTION4", "3.14")
+		t.Setenv("OPTION5", "1h")
 
-		settings.DefaultParser.SetYAML("option1: test\noption2: 42")
+		settings.DefaultParser.SetYAML("option1: test2\noption2: 43\noption3: true\noption4: 3.15\noption5: 1h1m")
 
-		settings.Add(&cfg.Option1).YAML("option1")
-		settings.Add(&cfg.Option2).Env("OPTION2")
+		settings.Add(&cfg.Option1).YAML("option1").Env("OPTION1")
+		settings.Add(&cfg.Option2).Env("OPTION2").YAML("option2")
+		settings.Add(&cfg.Option3).Env("OPTION3").YAML("option3")
+		settings.Add(&cfg.Option4).YAML("option4").Env("OPTION4")
+		settings.Add(&cfg.Option5).Env("OPTION5").YAML("option5")
 
 		settings.MustParse()
 
-		if cfg.Option1 != "test" {
-			t.Errorf("expected %s, got %s", "test", cfg.Option1)
+		if cfg.Option1 != "test2" {
+			t.Errorf("expected %s, got %s", "test2", cfg.Option1)
 		}
 		if cfg.Option2 != 42 {
 			t.Errorf("expected %d, got %d", 42, cfg.Option2)
+		}
+		if cfg.Option3 != false {
+			t.Errorf("expected %v, got %v", false, cfg.Option3)
+		}
+		if cfg.Option4 != 3.15 {
+			t.Errorf("expected %f, got %f", 3.15, cfg.Option4)
+		}
+		if cfg.Option5 != time.Hour {
+			t.Errorf("expected %v, got %v", time.Hour, cfg.Option5)
 		}
 	})
 }
 
 func TestCustomParser(t *testing.T) {
-	t.Setenv("OPTION1", "test")
+	t.Setenv("TEST_OPTION1", "test_env")
 
 	v := ""
-	parser := settings.NewParser()
-	parser.Add(&v).Env("OPTION1")
+	parser := settings.NewParser(
+		settings.WithEnvPrefix("TEST_"),
+		settings.WithArgs([]string{"--option1=test_flag"}),
+		settings.WithYAML("option1: test_yaml"),
+	)
+	parser.Add(&v).Env("OPTION1").Flag("option1")
 
 	if err := parser.Parse(); err != nil {
 		t.Error(err)
 	}
-	if v != "test" {
-		t.Errorf("expected %s, got %s", "test", v)
+	if v != "test_env" {
+		t.Errorf("expected %s, got %s", "test_env", v)
 	}
 }
